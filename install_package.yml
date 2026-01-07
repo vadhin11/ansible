@@ -1,0 +1,22 @@
+---
+- hosts: all
+  become: true
+  gather_facts: yes
+  
+  tasks:   
+
+  - name: Update and upgrade repository index
+    ansible.builtin.apt:
+    # apt:
+      update_cache: yes
+      cache_valid_time: 3600
+      upgrade: dist
+
+  - name: Install the latest version of package "nginx"
+    ansible.builtin.apt:
+    # apt:
+      name: 
+        - nginx
+        - htop
+      state: latest
+      allow_downgrade: yes

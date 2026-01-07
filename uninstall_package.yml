@@ -1,0 +1,13 @@
+---
+- hosts: all
+  become: true
+  tasks:   
+
+  - name: Uninstall packages
+    ansible.builtin.apt:
+    # apt:
+      name: 
+        - nginx
+        - htop
+      state: absent
+      allow_downgrade: yes
