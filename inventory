@@ -1,3 +1,4 @@
+# It can be IP, FQDN or DNS 
 [nginxserver]
 ubuntu03
 ubuntu02
