@@ -1,0 +1,36 @@
+---
+- name: Set NGINX Agent config-sync-group label
+  hosts: nginxserver
+  become: true
+  gather_facts: true
+
+  tasks:
+
+    - name: Load label_group from .env.label_group on control node
+      ansible.builtin.set_fact:
+        label_group: >-
+          {{ lookup('file', '.env.label_group')
+            | regex_replace('(?m)^label_group=(.*)$', '\1')
+            | trim }}
+      delegate_to: localhost
+      # run_once: true
+
+    - name: Ensure label_group is set
+      ansible.builtin.assert:
+        that:
+          - label_group is defined
+          - label_group | length > 0
+        fail_msg: "label_group not found in .env.label_group"
+
+    - name: Ensure labels block exists
+      ansible.builtin.blockinfile:
+        path: /etc/nginx-agent/nginx-agent.conf
+        marker: "# {mark} ANSIBLE MANAGED LABELS"
+        block: |
+          labels:
+            config-sync-group: {{ label_group }}
+
+    - name: Restart nginx-agent
+      ansible.builtin.service:
+        name: nginx-agent
+        state: restarted
