@@ -146,6 +146,9 @@ ENV/
 env.bak/
 venv.bak/
 
+# Except environments
+!.env.label_group.example
+
 # Spyder project settings
 .spyderproject
 .spyproject
