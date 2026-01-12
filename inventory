@@ -1,4 +1,10 @@
 # It can be IP, FQDN or DNS 
-[nginxserver]
-ubuntu03
-ubuntu02
+[nginx_apt_stable]
+ubuntu03    ansible_user=ubuntu
+ubuntu02    ansible_user=ubuntu
+[nginx_apt_mainline]
+web-dev-zone    ansible_user=ubuntu
+[nginx_dnf_stable]
+alma    ansible_user=admin
+[nginx_dnf_mainline]
+RHEL    ansible_user=admin
