@@ -1,6 +1,7 @@
 ---
 - name: Install NGINX Open Source from official nginx.org repo (Ubuntu)
-  hosts: nginxserver_mainline
+  # hosts: nginx_apt_stable
+  hosts: nginx_apt_mainline
   become: true
   gather_facts: true
 
