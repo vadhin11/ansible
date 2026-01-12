@@ -1,12 +1,12 @@
 ---
 - name: Install NGINX Open Source from official nginx.org repo (Ubuntu)
-  hosts: nginxserver
+  hosts: nginxserver_mainline
   become: true
   gather_facts: true
 
   vars:
     # Choose: "stable" or "mainline"
-    nginx_channel: "stable"
+    nginx_channel: "mainline"
 
     nginx_key_url: "https://nginx.org/keys/nginx_signing.key"
     nginx_keyring_path: "/usr/share/keyrings/nginx-archive-keyring.gpg"
