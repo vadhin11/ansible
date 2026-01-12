@@ -1,3 +1,4 @@
+# For Ubuntu-specific instructions
 ---
 - name: Install NGINX Open Source from official nginx.org repo (Ubuntu)
   # hosts: nginx_apt_stable
