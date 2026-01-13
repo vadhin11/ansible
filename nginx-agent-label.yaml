@@ -1,8 +1,11 @@
 ---
 - name: Set NGINX Agent config-sync-group label
-  hosts: nginxserver
+  hosts: nginx_apt_stable
   become: true
   gather_facts: true
+
+  vars:
+    env_file: ".env.label_group"
 
   tasks:
 
@@ -15,22 +18,38 @@
       delegate_to: localhost
       # run_once: true
 
+    - name: Debug env_file and label_group
+      ansible.builtin.debug:
+        msg:
+          - "env_file={{ env_file }}"
+          - "label_group='{{ label_group }}'"
+      delegate_to: localhost
+      # run_once: true
+
     - name: Ensure label_group is set
       ansible.builtin.assert:
         that:
-          - label_group is defined
           - label_group | length > 0
-        fail_msg: "label_group not found in .env.label_group"
+        fail_msg: "label_group not found in {{ env_file }}"
 
-    - name: Ensure labels block exists
-      ansible.builtin.blockinfile:
-        path: /etc/nginx-agent/nginx-agent.conf
-        marker: "# {mark} ANSIBLE MANAGED LABELS"
-        block: |
-          labels:
-            config-sync-group: {{ label_group }}
+    - name: Ensure yq is installed (Debian/Ubuntu)
+      ansible.builtin.apt:
+        name: yq
+        state: present
+        update_cache: true
+      when: ansible_facts.os_family | default('') == "Debian"
 
-    - name: Restart nginx-agent
+    - name: Upsert labels.config-sync-group in nginx-agent.conf
+      ansible.builtin.command:
+        cmd: >
+          yq -i '.labels = (.labels // {}) |
+                 .labels."config-sync-group" = "{{ label_group }}"'
+          /etc/nginx-agent/nginx-agent.conf -y
+      register: yq_update
+      changed_when: yq_update.rc == 0
+
+    - name: Restart nginx-agent if config changed
       ansible.builtin.service:
         name: nginx-agent
         state: restarted
+      when: yq_update is changed
