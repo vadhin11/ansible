@@ -1,0 +1,263 @@
+# For RHEL-based operating systems include RHEL, CentOS, Oracle Linux, AlmaLinux, Rocky Linux.
+---
+- name: Install NGINX Open Source from official nginx.org repo (RHEL-based)
+  # hosts: nginx_dnf_mainline # or nginx_dnf_stable (your inventory group)
+  hosts: nginx_dnf_stable
+  become: true
+  gather_facts: true
+
+  vars:
+    # Choose: "stable" or "mainline"
+    nginx_channel: "stable"
+
+    nginx_repo_path: "/etc/yum.repos.d/nginx.repo"
+    nginx_key_url: "https://nginx.org/keys/nginx_signing.key"
+    nginx_key_tmp: "/tmp/nginx_signing.key"
+
+    # Official NGINX signing key fingerprints (nginx.com)
+    nginx_fingerprints:
+      - "8540A6F18833A80E9C1653A42FD21310B49F6B46"
+      - "573BFD6B3D8FBC641079A6ABABF5BD827BD9BF62"
+      - "9E9BE90EACBCDE69FE9B204CBCDCD8A38D88A2B3"
+
+    # Additional packages you want installed together
+    extra_packages:
+      - curl
+      # - jq
+      # - htop
+      # - nginx-module-geoip
+      # - nginx-module-image-filter
+      # - nginx-module-njs
+      # - nginx-module-perl
+      # - nginx-module-xslt
+      # - nginx-module-otel
+      # - nginx-module-acme
+
+    env_file: ".env.label_group"
+
+    # Optional: upgrade all packages on the host (set true if you really want full upgrade)
+    do_system_upgrade: true
+
+  tasks:
+
+    - name: Enable EPEL repository (EL9)
+      ansible.builtin.dnf:
+        name: https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+        state: present
+        disable_gpg_check: false
+      when: ansible_facts.os_family == "RedHat" and ansible_distribution != "AlmaLinux"
+
+    - name: Ensure python3 is installed
+      ansible.builtin.dnf:
+        name: python3
+        state: present
+      # when: ansible_facts.os_family == "RedHat"
+      when: ansible_distribution == "AlmaLinux"
+
+    - name: Download get-pip.py
+      ansible.builtin.get_url:
+        url: https://bootstrap.pypa.io/get-pip.py
+        dest: /tmp/get-pip.py
+        mode: "0644"
+      when: ansible_distribution == "AlmaLinux"
+
+    - name: Install pip using get-pip.py
+      ansible.builtin.command:
+        cmd: python3 /tmp/get-pip.py
+        creates: /usr/local/bin/pip3
+      when: ansible_distribution == "AlmaLinux"
+
+    - name: Refresh DNF metadata
+      ansible.builtin.dnf:
+        update_cache: true
+      when: ansible_facts.os_family == "RedHat"
+
+    - name: (Optional) Upgrade all packages
+      ansible.builtin.dnf:
+        name: "*"
+        state: latest
+      when: do_system_upgrade | bool
+
+    - name: Install prerequisites
+      ansible.builtin.dnf:
+        name:
+          - ca-certificates
+          - curl
+          - gnupg2
+          - dnf-plugins-core
+        state: present
+        update_cache: yes
+
+    - name: Install yq via pip
+      ansible.builtin.command:
+        cmd: pip3 install yq
+        creates: /usr/local/bin/yq
+      # when: ansible_facts.os_family == "RedHat"
+      when: ansible_distribution == "AlmaLinux"
+
+    - name: Download NGINX signing key (ascii)
+      ansible.builtin.get_url:
+        url: "{{ nginx_key_url }}"
+        dest: "{{ nginx_key_tmp }}"
+        mode: "0644"
+
+    - name: Show key fingerprints (do not import)
+      ansible.builtin.command: >
+        gpg --batch --quiet --show-keys --with-fingerprint --with-colons {{ nginx_key_tmp }}
+      register: nginx_key_check
+      changed_when: false
+
+    - name: Fail if NGINX signing key fingerprints do not match expected (all 3)
+      ansible.builtin.assert:
+        that:
+          - nginx_fingerprints[0] in nginx_key_check.stdout
+          - nginx_fingerprints[1] in nginx_key_check.stdout
+          - nginx_fingerprints[2] in nginx_key_check.stdout
+        fail_msg: "NGINX repo key fingerprint mismatch (expected 3 fingerprints). Refusing to add repo."
+
+    - name: Create nginx.org repo file (stable enabled by default, mainline optional)
+      ansible.builtin.copy:
+        dest: "{{ nginx_repo_path }}"
+        mode: "0644"
+        content: |
+          [nginx-stable]
+          name=nginx stable repo
+          baseurl=https://nginx.org/packages/centos/$releasever/$basearch/
+          gpgcheck=1
+          enabled={{ 1 if nginx_channel == 'stable' else 0 }}
+          gpgkey={{ nginx_key_url }}
+          module_hotfixes=true
+
+          [nginx-mainline]
+          name=nginx mainline repo
+          baseurl=https://nginx.org/packages/mainline/centos/$releasever/$basearch/
+          gpgcheck=1
+          enabled={{ 1 if nginx_channel == 'mainline' else 0 }}
+          gpgkey={{ nginx_key_url }}
+          module_hotfixes=true
+
+    - name: Refresh DNF cache after adding nginx.org repo
+      ansible.builtin.dnf:
+        update_cache: yes
+
+    - name: Install NGINX + extra packages
+      ansible.builtin.dnf:
+        name: "{{ ['nginx'] + extra_packages }}"
+        state: present
+      when: ansible_facts.os_family == "RedHat" #and ansible_distribution != "AlmaLinux"
+
+    # - name: Install NGINX + extra packages
+    #   ansible.builtin.dnf:
+    #     name: nginx
+    #     state: present
+    #   when: ansible_distribution == "AlmaLinux"
+
+    - name: Ensure nginx is enabled and running
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    - name: Verify NGINX is responding locally (HTTP 200 expected)
+      ansible.builtin.command: curl -I 127.0.0.1
+      register: nginx_curl_check
+      changed_when: false
+
+    - name: Show curl result
+      ansible.builtin.debug:
+        var: nginx_curl_check.stdout_lines
+
+    # Example: install optional dynamic modules later (uncomment + choose modules)
+    - name: Install NGINX dynamic modules
+      ansible.builtin.dnf:
+        name:
+          - nginx-module-njs
+          - nginx-module-otel
+          - nginx-module-image-filter
+        state: present
+
+    - name: Load DATA_PLANE_KEY from .env on control node
+      ansible.builtin.set_fact:
+        data_plane_key: >-
+          {{ lookup('file', '.env')
+            | regex_replace('(?m)^DATA_PLANE_KEY=(.*)$', '\1')
+            | trim }}
+      delegate_to: localhost
+    #   # run_once: true
+
+    - name: Ensure DATA_PLANE_KEY is set
+      ansible.builtin.assert:
+        that:
+          - data_plane_key is defined
+          - data_plane_key | length > 0
+        fail_msg: "DATA_PLANE_KEY not found in .env"
+
+    - name: Register NGINX instance (capture output)
+      ansible.builtin.shell: |
+        curl -fsSL https://agent.connect.nginx.com/nginx-agent/install | sh -s -- -y
+      environment:
+        DATA_PLANE_KEY: "{{ data_plane_key }}"
+      args:
+        executable: /bin/bash
+      register: nginx_agent_install
+      changed_when: false
+
+    - name: Load label_group from .env.label_group on control node
+      ansible.builtin.set_fact:
+        label_group: >-
+          {{ lookup('file', '.env.label_group')
+            | regex_replace('(?m)^label_group=(.*)$', '\1')
+            | trim }}
+      delegate_to: localhost
+      # run_once: true
+
+    - name: Debug env_file and label_group
+      ansible.builtin.debug:
+        msg:
+          - "env_file={{ env_file }}"
+          - "label_group='{{ label_group }}'"
+      delegate_to: localhost
+      # run_once: true
+
+    - name: Ensure label_group is set
+      ansible.builtin.assert:
+        that:
+          - label_group | length > 0
+        fail_msg: "label_group not found in {{ env_file }}"
+
+    - name: Check yq version
+      # ansible.builtin.command: yq --version
+      ansible.builtin.command: /usr/local/bin/yq --version
+      changed_when: false
+
+    # If your repo yq expects "yq -y" for YAML output, keep -y.
+    # Some yq builds require -o=yaml instead; this works for most RHEL yq packages.
+    - name: Upsert labels.config-sync-group in nginx-agent.conf (RHEL-based)
+      ansible.builtin.command:
+        argv:
+          - /usr/local/bin/yq
+          - -i
+          - '.labels = (.labels // {}) | .labels."config-sync-group" = "{{ label_group }}"'
+          - /etc/nginx-agent/nginx-agent.conf
+      register: yq_update
+      changed_when: yq_update.rc == 0
+      when: ansible_facts.os_family == "RedHat" and ansible_distribution != "AlmaLinux"
+
+    - name: Upsert labels.config-sync-group in nginx-agent.conf (RHEL-based)
+      ansible.builtin.command:
+        argv:
+          - /usr/bin/yq
+          - -i
+          - '.labels = (.labels // {}) | .labels."config-sync-group" = "{{ label_group }}"'
+          - /etc/nginx-agent/nginx-agent.conf
+      register: yq_update
+      changed_when: yq_update.rc == 0
+      when: ansible_distribution == "AlmaLinux"
+
+    - name: Restart nginx-agent if config changed
+      ansible.builtin.service:
+        name: nginx-agent
+        state: restarted
+      when:
+        - ansible_facts.os_family == "RedHat"
+        - yq_update is changed
